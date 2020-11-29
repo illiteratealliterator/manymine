@@ -1,0 +1,12 @@
+{
+  "name": "manymine",
+  "version": "1.0.0",
+  "description": "Many Mines",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "raknet": "^1.8.0"
+  }
+}
