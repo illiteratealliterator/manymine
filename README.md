@@ -1,73 +1,51 @@
 # manymine
-Tool that helps LAN discovery of multiple Minecraft Bedrock servers hosted on a single machine.
+A simple way to run multiple Minecraft Bedrock servers in docker containers on the same host, and be able to discover them as LAN games.
 
-For now, here's a working example:
+## Environment parameters
 
+**MM_HOST**  
+This is the IP or name of the host which is running Manymine and your Minecraft servers  
+e.g. MM_HOST=192.168.0.10
+
+**MM_SERVER_PORTS**  
+Any array of the ports your Minecraft servers are running on  
+e.g. MM_SERVER_PORTS=[60601, 60602]
+
+## Docker Compose
+Using docker compose, you'll want something like this:
 ```
 version: "3.7"
 services:
-  minecraft-creative:
-    image: itzg/minecraft-bedrock-server
-    container_name: minecraft-creative
-    environment:
-      - UID=1000
-      - GID=1000
-      - EULA=TRUE
-      - SERVER_NAME=Creative
-      - GAMEMODE=creative
-      - DIFFICULTY=peaceful
-      - LEVEL_TYPE=flat
-      - ONLINE_MODE=false
-      - ALLOW_CHEATS=true
-      - SERVER_PORT=60601
-    volumes:
-      - /var/lib/minecraft-creative:/data
-    networks:
-      - minecraft-network
-    ports:
-      - '60601:60601/udp'
-    restart: always
-    stdin_open: true
-    tty: true
-
-  minecraft-survival:
-    image: itzg/minecraft-bedrock-server
-    container_name: minecraft-survival
-    environment:
-      - UID=1000
-      - GID=1000
-      - EULA=TRUE
-      - SERVER_NAME=Survival
-      - GAMEMODE=survival
-      - DIFFICULTY=easy
-      - LEVEL_TYPE=default
-      - ONLINE_MODE=false
-      - ALLOW_CHEATS=true
-      - LEVEL_SEED=1935762385
-      - SERVER_PORT=60602
-    volumes:
-      - /var/lib/minecraft-survival:/data
-    networks:
-      - minecraft-network
-    ports:
-      - '60602:60602/udp'
-    restart: always
-    stdin_open: true
-    tty: true
-
   manymine:
     image: illiteratealliterator/manymine
     container_name: manymine
     environment:
-      - MM_SERVERS=["minecraft-creative:60601", "minecraft-survival:60602"]
-    networks:
-      - minecraft-network
+      - MM_HOST=192.168.0.10
+      - MM_SERVER_PORTS=[60601, 60602]
     ports:
       - '19132:19132/udp'
-    restart: always
-    stdin_open: true
-    tty: true
 
-networks:
-  minecraft-network:
+  minecraft-a:
+    image: itzg/minecraft-bedrock-server
+    environment:
+      - EULA=TRUE
+      - SERVER_NAME=Server A
+    volumes:
+      - minecraft-a-data:/data
+    ports:
+      - '60601:19132/udp'
+
+  minecraft-b:
+    image: itzg/minecraft-bedrock-server
+    environment:
+      - EULA=TRUE
+      - SERVER_NAME=Server B
+    volumes:
+      - minecraft-b-data:/data
+    ports:
+      - '60602:19132/udp'
+
+volumes:
+  minecraft-a-data:
+  minecraft-b-data:
 ```
