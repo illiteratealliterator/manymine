@@ -4,7 +4,7 @@ A simple way to run multiple Minecraft Bedrock servers in docker containers on t
 ## Environment parameters
 
 **MM_HOST**  
-This is the IP or name of the host which is running Manymine and your Minecraft servers  
+This is the IP or name of the host which is running manymine and your Minecraft servers  
 e.g. MM_HOST=192.168.0.10
 
 **MM_SERVER_PORTS**  
