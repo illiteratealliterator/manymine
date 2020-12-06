@@ -4,19 +4,10 @@ const dgram = require('dgram');
 const { createSerializer, createDeserializer } = require('raknet/src/transforms/serializer');
 
 // Configuration
-const MM_LISTEN_HOST = process.env.MM_LISTEN_HOST || null;
 const MM_LISTEN_PORT = process.env.MM_LISTEN_PORT || '19132';
-const MM_SERVERS = (process.env.MM_SERVERS ? JSON.parse(process.env.MM_SERVERS) : []).map(server => {
-  const values = server.split(':', 2);
-  if (values.length !== 2) {
-    console.log(`Invalid server configuration: ${server}`);
-    process.exit(1);
-  }
-  return { 
-    host: values[0],
-    port: values[1]
-  };
-});
+const MM_HOST = process.env.MM_HOST || null;
+const MM_SERVER_PORTS = process.env.MM_SERVER_PORTS ? JSON.parse(process.env.MM_SERVER_PORTS) : [];
+const MM_PING_FREQUENCY = parseInt(process.env.MM_PING_FREQUENCY || '1000');
 
 function randomSigned32() {
   return Math.floor((Math.random() - 0.5) * Math.pow(2, 32));
@@ -24,8 +15,8 @@ function randomSigned32() {
 
 // Manages the connection to a single minecraft server
 class Connector {
-  constructor (index, host, port) {
-    this.index = index;
+  constructor (host, port) {
+    this.name = `${host}:${port}`;
     this.host = host;
     this.port = port;
     this.clientID = [randomSigned32(), randomSigned32()];
@@ -36,11 +27,13 @@ class Connector {
     this.remoteServerMagic = null;
     this.remoteServerName = null;
     this.receivedPong = false;
-    
+    this.state = 'Unknown';
+
     this.serializer.on('data', (chunk) => {
       this.socket.send(chunk, 0, chunk.length, this.port, this.host, (err) => {
         if (err) {
-          console.log(`Unable to send ping to ${this.host}:${this.port}`);
+          this.setState('Error');
+          console.log(err.message);
         }
       });
     });
@@ -58,9 +51,15 @@ class Connector {
       this.parser.write(data);
     });
     
-    console.log(`${this.index} Connecting to Minecraft Server at ${host}:${port}`);
     this.socket.bind();
     this.sendPing();
+  }
+
+  setState (newState) {
+    if (newState !== this.state) {
+      console.log(`${this.name} changed state from [${this.state}] to [${newState}]`)
+      this.state = newState;
+    }
   }
 
   sendPing () {
@@ -74,14 +73,16 @@ class Connector {
       }
     });
     setTimeout(() => {
-      if (!this.receivedPong) {
-        console.log(`${this.index} No response from server`);
+      if (this.receivedPong) {
+        this.setState('Connected');
+      } else {
+        this.setState('No Response');
         this.remoteServerID = null;
         this.remoteServerMagic = null;
         this.remoteServerName = null;
       }
       this.sendPing();
-    }, 1000);
+    }, MM_PING_FREQUENCY);
   }
 }
 
@@ -91,18 +92,23 @@ function handleClientPing (socket, host, port, data) {
   const serializer = createSerializer(true);
 
   parser.on('data', (parsed) => {
-    for (const connector of connectors) {
-      if (connector.remoteServerID !== null) {
-        serializer.write({ 
-          name: 'unconnected_pong', 
-          params: {
-            pingID: parsed.data.params.pingID,
-            serverID: connector.remoteServerID,
-            magic: connector.remoteServerMagic,
-            serverName: connector.remoteServerName
-          }
-        });
+    if (parsed.data.name === 'unconnected_ping') {
+      for (const connector of connectors) {
+        if (connector.remoteServerID !== null) {
+          const updatedServerName = connector.remoteServerName.replace(MM_LISTEN_PORT, connector.port);
+          serializer.write({
+            name: 'unconnected_pong', 
+            params: {
+              pingID: parsed.data.params.pingID,
+              serverID: connector.remoteServerID,
+              magic: connector.remoteServerMagic,
+              serverName: updatedServerName
+            }
+          });
+        }
       }
+    } else {
+      console.log('Received unexpected packet on listen port:', parsed.data.name);
     }
   });
 
@@ -113,8 +119,39 @@ function handleClientPing (socket, host, port, data) {
   parser.write(data);
 }
 
+// Check configuration
+if (MM_LISTEN_PORT) {
+  console.log(`MM_LISTEN_PORT=${MM_LISTEN_PORT}`);
+} else {
+  console.log("No listen port specified (MM_LISTEN_PORT)");
+  process.exit(1);
+}
+
+if (MM_HOST) {
+  console.log(`MM_HOST=${MM_HOST}`);
+} else {
+  console.log("No host address specified (MM_HOST)");
+  process.exit(1);
+}
+
+if (MM_SERVER_PORTS && MM_SERVER_PORTS.length > 0) {
+  console.log(`MM_SERVER_PORTS=${MM_SERVER_PORTS}`);
+} else {
+  console.log("No server ports specified (MM_SERVER_PORTS)");
+  process.exit(1);
+}
+
+if (MM_PING_FREQUENCY > 0) {
+  console.log(`MM_PING_FREQUENCY=${MM_PING_FREQUENCY}`);
+} else {
+  console.log("Invalid ping frequency (MM_PING_FREQUENCY)");
+  process.exit(1);
+}
+
+// Connect to each configured server
+const connectors = MM_SERVER_PORTS.map(port => new Connector(MM_HOST, port));
+
 // Listen for broadcast pings from minecraft clients
-const connectors = MM_SERVERS.map((server, index) => new Connector(index, server.host, server.port));
 const socket = dgram.createSocket({ type: 'udp4' });
 
 socket.on('listening', () => {
@@ -126,4 +163,4 @@ socket.on('message', (data, { port, address }) => {
   handleClientPing(socket, address, port, data);
 });
 
-socket.bind(MM_LISTEN_PORT, MM_LISTEN_HOST);
+socket.bind(MM_LISTEN_PORT);
