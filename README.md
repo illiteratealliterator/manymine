@@ -1,15 +1,11 @@
 # manymine
 A simple way to run multiple Minecraft Bedrock servers in docker containers on the same host, and be able to discover them as LAN games.
 
-## Environment parameters
+Run your Minecraft Bedrock servers on the default port (19132) and map that port to some higher port (e.g. 60601). 
 
-**MM_HOST**  
-This is the IP or name of the host which is running manymine and your Minecraft servers  
-e.g. MM_HOST=192.168.0.10
+Add the label 'manymine.enable=true' to each server container you wish manymine to connect to. 
 
-**MM_SERVER_PORTS**  
-Any array of the ports your Minecraft servers are running on  
-e.g. MM_SERVER_PORTS=[60601, 60602]
+Both manymine and your minecraft servers need to be on the same docker network.
 
 ## Docker Compose
 Using docker compose, you'll want something like this:
@@ -19,14 +15,14 @@ services:
   manymine:
     image: illiteratealliterator/manymine
     container_name: manymine
-    environment:
-      - MM_HOST=192.168.0.10
-      - MM_SERVER_PORTS=[60601, 60602]
     ports:
       - '19132:19132/udp'
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
 
   minecraft-a:
     image: itzg/minecraft-bedrock-server
+    container_name: minecraft-a
     environment:
       - EULA=TRUE
       - SERVER_NAME=Server A
@@ -34,9 +30,12 @@ services:
       - minecraft-a-data:/data
     ports:
       - '60601:19132/udp'
+    labels:
+      - manymine.enable=true
 
   minecraft-b:
     image: itzg/minecraft-bedrock-server
+    container_name: minecraft-b
     environment:
       - EULA=TRUE
       - SERVER_NAME=Server B
@@ -44,6 +43,8 @@ services:
       - minecraft-b-data:/data
     ports:
       - '60602:19132/udp'
+    labels:
+      - manymine.enable=true
 
 volumes:
   minecraft-a-data:
