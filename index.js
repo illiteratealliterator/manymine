@@ -51,7 +51,7 @@ function handleClientPing (socket, host, port, data) {
 
   parser.on('data', (parsed) => {
     if (parsed.data.name === 'unconnected_ping') {
-      for (const [id, connector] of Object.entries(connectors)) {
+      for (const connector of Object.values(connectors)) {
         if (connector.remoteServerID !== null) {
           const updatedServerName = connector.remoteServerName.replace(connector.privatePort, connector.publicPort);
           serializer.write({
@@ -100,3 +100,13 @@ socket.on('message', (data, { port, address }) => {
 // Let's go
 observer.start();
 socket.bind(MM_LISTEN_PORT);
+
+// Listen for termination message
+process.on('SIGTERM', function onSigterm () {
+  console.info('Graceful shutdown on SIGTERM.');
+  for (const connector of Object.values(connectors)) {
+    connector.close();
+  }
+  observer.close();
+  process.exit();
+});

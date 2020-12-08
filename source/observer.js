@@ -86,7 +86,7 @@ Observer.Server = class {
       }
     }
 
-    for (const [id, network] of Object.entries(info.NetworkSettings.Networks)) {
+    for (const network of Object.values(info.NetworkSettings.Networks)) {
       if (network.IPAddress) {
         self.ipAddress = network.IPAddress;
         break;
