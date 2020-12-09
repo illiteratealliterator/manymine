@@ -1,9 +1,9 @@
 # manymine
 A simple way to run multiple Minecraft Bedrock servers in docker containers on the same host, and be able to discover them as LAN games.
 
-Run your Minecraft Bedrock servers on the default port (19132) and map that port to some higher port (e.g. 60601). 
+Run your Minecraft Bedrock servers on non-default ports (e.g. 60601, 60602...)
 
-Add the label 'manymine.enable=true' to each server container you wish manymine to connect to. 
+Add the label 'manymine.enable=true' to each server container you want manymine to announce to clients.
 
 Both manymine and your minecraft servers need to be on the same docker network.
 
