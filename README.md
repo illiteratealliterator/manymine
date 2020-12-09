@@ -26,10 +26,11 @@ services:
     environment:
       - EULA=TRUE
       - SERVER_NAME=Server A
+      - SERVER_PORT=60601
     volumes:
       - minecraft-a-data:/data
     ports:
-      - '60601:19132/udp'
+      - '60601:60601/udp'
     labels:
       - manymine.enable=true
 
@@ -39,10 +40,11 @@ services:
     environment:
       - EULA=TRUE
       - SERVER_NAME=Server B
+      - SERVER_PORT=60602
     volumes:
       - minecraft-b-data:/data
     ports:
-      - '60602:19132/udp'
+      - '60602:60602/udp'
     labels:
       - manymine.enable=true
 
