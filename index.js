@@ -14,27 +14,45 @@ const connectors = {};
 // Observe active docker containers
 const observer = new Observer();
 
+// Handle a server being added
 observer.on('serverAdded', server => {
   console.log(`Server added: ${server.name} (${server.id})`);
   if (server.ipAddress) {
-    const portMapping = server.portMappings.find(portMapping => portMapping.privatePort === MM_LISTEN_PORT);
+    let internalPort = MM_LISTEN_PORT;
+    
+    // Has the server been configured to run on a non-default port
+    if (server.internalPort != null) {
+      console.log(`Server ${server.name} configured to use internal port ${server.internalPort}`);
+      internalPort = server.internalPort;
+    }
+
+    // Find the mapping for the internal server port
+    let portMapping = server.portMappings.find(portMapping => portMapping.privatePort === internalPort);
+
+    // Default to using the only port mapping there is
+    if (!portMapping && server.portMappings.length === 1) {
+      portMapping = server.portMappings[0];
+    }
+
     if (portMapping) {
+      console.log(`Server ${server.name} is running on internal port ${portMapping.privatePort} and external port ${portMapping.publicPort}`);
       const connector = new Connector(server.name, server.ipAddress, portMapping.privatePort, portMapping.publicPort);
       connectors[server.id] = connector;
       connector.on('changed', (oldState, newState) => {
         console.log(`${connector.name} changed state from [${oldState}] to [${newState}]`)
       });
       connector.on('error', error => {
-        console.log(`${connector.name} ${error.message}`);
+        console.error(`${connector.name} ${error.message}`);
       });
     } else {
-      console.log(`Server ${server.name} (${server.id}) has no mapping for port ${MM_LISTEN_PORT}.`);
+      console.error(`Server ${server.name} has no mapping for internal port ${internalPort}`);
     }
   } else {
-    console.log(`Server ${server.name} (${server.id}) has no ip address.`);
+    console.error(`Server ${server.name} has no ip address`);
   }
 });
 
+// Handle a server being removed
 observer.on('serverRemoved', server => {
   console.log(`Server removed: ${server.name} (${server.id})`);
   const connector = connectors[server.id];
@@ -66,7 +84,7 @@ function handleClientPing (socket, host, port, data) {
         }
       }
     } else {
-      console.log('Received unexpected packet on listen port:', parsed.data.name);
+      console.error('Received unexpected packet on listen port:', parsed.data.name);
     }
   });
 
@@ -81,7 +99,7 @@ function handleClientPing (socket, host, port, data) {
 if (MM_LISTEN_PORT) {
   console.log(`MM_LISTEN_PORT=${MM_LISTEN_PORT}`);
 } else {
-  console.log("No listen port specified (MM_LISTEN_PORT)");
+  console.error("No listen port specified (MM_LISTEN_PORT)");
   process.exit(1);
 }
 
@@ -103,7 +121,7 @@ socket.bind(MM_LISTEN_PORT);
 
 // Listen for termination message
 process.on('SIGTERM', function onSigterm () {
-  console.info('Graceful shutdown on SIGTERM.');
+  console.info('Graceful shutdown on SIGTERM');
   for (const connector of Object.values(connectors)) {
     connector.close();
   }

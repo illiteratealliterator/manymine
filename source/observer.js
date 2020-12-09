@@ -4,12 +4,10 @@ const EventEmitter = require('events');
 const Docker = require('dockerode');
 
 class Observer extends EventEmitter {
-  constructor(options) {
+  constructor() {
     super();
     const self = this;
     self.docker = new Docker({socketPath: '/var/run/docker.sock'});
-    self.options = options || {};
-    self.serverPorts = self.options.serverPorts || [19132];
     self.updateTimeout = null;
     self.servers = {};
   }
@@ -29,7 +27,7 @@ class Observer extends EventEmitter {
 
     const activeServers = containerData
       .filter(info => info.State.Status === 'running' && info.Config.Labels['manymine.enable'] === "true")
-      .map(info => new Observer.Server(info, self.serverPorts));
+      .map(info => new Observer.Server(info));
 
     for (const [id, server] of Object.entries(self.servers)) {
       if (!activeServers.find(s => s.id === id)) {
@@ -72,17 +70,28 @@ class Observer extends EventEmitter {
 }
 
 Observer.Server = class {
-  constructor (info, serverPorts) {
+  constructor (info) {
     const self = this;
     self.id = info.Id;
     self.name = info.Name || 'Unknown';
     self.ipAddress = null;
+    self.internalPort = null;
     self.portMappings = [];
 
-    for (const serverPort of serverPorts) {
-      const entries = info.NetworkSettings.Ports[serverPort + "/udp"];
-      if (entries && entries.length > 0) {
-        self.portMappings.push(new Observer.PortMapping(serverPort, parseInt(entries[0].HostPort)));
+    const configuredInternalPort = info.Config.Labels['manymine.internal-port'];
+    if (configuredInternalPort) {
+      self.internalPort = parseInt(configuredInternalPort);
+    }
+
+    for (const [key, entries] of Object.entries(info.NetworkSettings.Ports)) {
+      if (key && entries) {
+        const matches = key.match(/^(\d+)\/udp$/)
+        if (matches) {
+          const internalPort = parseInt(matches[1]);
+          if (entries.length > 0 && entries[0].HostPort) {
+            self.portMappings.push(new Observer.PortMapping(internalPort, parseInt(entries[0].HostPort)));
+          }
+        }
       }
     }
 
