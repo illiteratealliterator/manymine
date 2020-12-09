@@ -108,6 +108,7 @@ Observer.Server = class {
     return self.id === other.id
       && self.name === other.name
       && self.ipAddress === other.ipAddress
+      && self.internalPort === other.internalPort
       && self.portMappings.length === other.portMappings.length
       && self.portMappings.every((m, i) => m.equalTo(other.portMappings[i]));
   }
