@@ -29,7 +29,6 @@ class Connector extends EventEmitter {
     this.socket.on('message', (data, { port, address }) => {
       const parsed = this.parseUnconnectedPong(data);
       if (parsed) {
-        console.log(`Pong from server ${address}:${port}`);
         this.remoteServerID = parsed.data.params.serverID;
         this.remoteServerMagic = parsed.data.params.magic;
         this.remoteServerName = parsed.data.params.serverName;
@@ -52,7 +51,6 @@ class Connector extends EventEmitter {
     }
     catch (error) {
       console.error(`Connector: Ignoring unexpected/invalid packet on listen port.`);
-      console.log(error);
     }
   }
 

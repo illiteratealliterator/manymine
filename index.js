@@ -89,7 +89,6 @@ function parseUnconnectedPing(data) {
 function handleClientPing(socket, address, port, data) {
   const parsed = parseUnconnectedPing(data);
   if (parsed) {
-    console.log(`Ping from client ${address}:${port}`);
     for (const connector of Object.values(connectors)) {
       if (connector.remoteServerID !== null) {
         const updatedServerName = connector.remoteServerName.replace(connector.privatePort, connector.publicPort);
