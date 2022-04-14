@@ -1,13 +1,13 @@
 {
   "name": "manymine",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "A tool to aid in the LAN discovery of multiple Minecraft Bedrock servers on a single machine.",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
-    "dockerode": "^3.2.1",
+    "dockerode": "^3.3.1",
     "raknet": "^1.8.0"
   }
 }

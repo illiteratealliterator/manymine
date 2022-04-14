@@ -7,16 +7,23 @@ const Connector = require('./source/connector');
 
 // Configuration
 const MM_LISTEN_PORT = parseInt(process.env.MM_LISTEN_PORT || '19132');
+const MM_DISCOVERY_INTERVAL = parseInt(process.env.MM_DISCOVERY_INTERVAL || '0');
+const MM_PING_INTERVAL = parseInt(process.env.MM_PING_INTERVAL || '1000');
 
 // Mapping from container id to connector instance
 const connectors = {};
 
 // Observe active docker containers
-const observer = new Observer();
+const observer = new Observer(MM_DISCOVERY_INTERVAL);
+
+// Transform data packets
+const parser = createDeserializer(true);
+const serializer = createSerializer(true);
 
 // Handle a server being added
 observer.on('serverAdded', server => {
   console.log(`Server added: ${server.name} (${server.id})`);
+
   if (server.ipAddress) {
     let internalPort = MM_LISTEN_PORT;
     
@@ -36,7 +43,7 @@ observer.on('serverAdded', server => {
 
     if (portMapping) {
       console.log(`Server ${server.name} is running on internal port ${portMapping.privatePort} and external port ${portMapping.publicPort}`);
-      const connector = new Connector(server.name, server.ipAddress, portMapping.privatePort, portMapping.publicPort);
+      const connector = new Connector(server.name, server.ipAddress, portMapping.privatePort, portMapping.publicPort, MM_PING_INTERVAL, parser, serializer);
       connectors[server.id] = connector;
       connector.on('changed', (oldState, newState) => {
         console.log(`${connector.name} changed state from [${oldState}] to [${newState}]`)
@@ -62,45 +69,53 @@ observer.on('serverRemoved', server => {
   }
 });
 
-// Respond to a ping from a minecraft client
-function handleClientPing (socket, host, port, data) {
-  const parser = createDeserializer(true);
-  const serializer = createSerializer(true);
-
-  parser.on('data', (parsed) => {
-    if (parsed.data.name === 'unconnected_ping') {
-      for (const connector of Object.values(connectors)) {
-        if (connector.remoteServerID !== null) {
-          const updatedServerName = connector.remoteServerName.replace(connector.privatePort, connector.publicPort);
-          serializer.write({
-            name: 'unconnected_pong', 
-            params: {
-              pingID: parsed.data.params.pingID,
-              serverID: connector.remoteServerID,
-              magic: connector.remoteServerMagic,
-              serverName: updatedServerName
-            }
-          });
-        }
-      }
-    } else {
-      console.error('Received unexpected packet on listen port:', parsed.data.name);
+// Parse an incoming unconnected ping packet
+function parseUnconnectedPing(data) {
+  try {
+    const parsed = parser.parsePacketBuffer(data);
+    if (parsed.data.name !== 'unconnected_ping') {
+      console.error('Ignoring unexpected packet on listen port:', parsed.data.name);
+      return null;
     }
-  });
+    return parsed;
+  }
+  catch (error) {
+    console.error(`Listener: Ignoring unexpected/invalid packet on listen port. Do you have a client that has a manually configured server pointing to port 19132?`);
+    return null;
+  }
+}
 
-  serializer.on('data', (chunk) => {
-    socket.send(chunk, 0, chunk.length, port, host);
-  });
-
-  parser.write(data);
+// Respond to a ping from a minecraft client
+function handleClientPing(socket, address, port, data) {
+  const parsed = parseUnconnectedPing(data);
+  if (parsed) {
+    console.log(`Ping from client ${address}:${port}`);
+    for (const connector of Object.values(connectors)) {
+      if (connector.remoteServerID !== null) {
+        const updatedServerName = connector.remoteServerName.replace(connector.privatePort, connector.publicPort);
+        const serialized = serializer.createPacketBuffer({
+          name: 'unconnected_pong', 
+          params: {
+            pingID: parsed.data.params.pingID,
+            serverID: connector.remoteServerID,
+            magic: connector.remoteServerMagic,
+            serverName: updatedServerName
+          }
+        });
+        socket.send(serialized, 0, serialized.length, port, address);
+      }
+    }
+  }
 }
 
 // Check configuration
-if (MM_LISTEN_PORT) {
-  console.log(`MM_LISTEN_PORT=${MM_LISTEN_PORT}`);
-} else {
+if (!MM_LISTEN_PORT) {
   console.error("No listen port specified (MM_LISTEN_PORT)");
   process.exit(1);
+}
+
+if (MM_PING_INTERVAL < 100) {
+  MM_PING_INTERVAL = 100;
 }
 
 // Listen for broadcast pings from minecraft clients
@@ -108,7 +123,9 @@ const socket = dgram.createSocket({ type: 'udp4' });
 
 socket.on('listening', () => {
   const address = socket.address();
-  console.log(`Listening for pings at ${address.address}:${address.port}`);  
+  console.log(`Server discovery interval:`, MM_DISCOVERY_INTERVAL > 0 ? `${MM_DISCOVERY_INTERVAL}ms` : `None`);
+  console.log(`Server ping interval: ${MM_PING_INTERVAL}ms`);
+  console.log(`Listening for pings at ${address.address}:${address.port}`); 
 });
 
 socket.on('message', (data, { port, address }) => {

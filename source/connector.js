@@ -2,96 +2,105 @@
 
 const EventEmitter = require('events');
 const dgram = require('dgram');
-const { createSerializer, createDeserializer } = require('raknet/src/transforms/serializer');
 
 function randomSigned32() {
   return Math.floor((Math.random() - 0.5) * Math.pow(2, 32));
 }
 
 class Connector extends EventEmitter {
-  constructor (name, host, privatePort, publicPort) {
+  constructor (name, host, privatePort, publicPort, pingInterval, parser, serializer) {
     super();
-    const self = this;
-    self.host = host;
-    self.privatePort = privatePort;
-    self.publicPort = publicPort;
-    self.name = `${name} (${self.host}:${self.publicPort})`;
-    self.clientID = [randomSigned32(), randomSigned32()];
-    self.socket = dgram.createSocket({ type: 'udp4' });
-    self.serializer = createSerializer(true);
-    self.parser = createDeserializer(true);
-    self.remoteServerID = null;
-    self.remoteServerMagic = null;
-    self.remoteServerName = null;
-    self.receivedPong = false;
-    self.retryTimeout = null;
-    self.state = 'Initial';
+    this.host = host;
+    this.privatePort = privatePort;
+    this.publicPort = publicPort;
+    this.pingInterval = pingInterval;
+    this.parser = parser;
+    this.serializer = serializer;
+    this.name = `${name} (${this.host}:${this.publicPort})`;
+    this.clientID = [randomSigned32(), randomSigned32()];
+    this.socket = dgram.createSocket({ type: 'udp4' });
+    this.remoteServerID = null;
+    this.remoteServerMagic = null;
+    this.remoteServerName = null;
+    this.receivedPong = false;
+    this.retryTimeout = null;
+    this.state = 'Initial';
 
-    self.serializer.on('data', (chunk) => {
-      self.socket.send(chunk, 0, chunk.length, self.privatePort, self.host, (err) => {
-        if (err) {
-          self.setState('Error');
-          self.emit('error', err);
-        }
-      });
-    });
-
-    self.parser.on('data', (parsed) => {
-      if (parsed.data.name === 'unconnected_pong') {
-        self.remoteServerID = parsed.data.params.serverID;
-        self.remoteServerMagic = parsed.data.params.magic;
-        self.remoteServerName = parsed.data.params.serverName;
-        self.receivedPong = true;
+    this.socket.on('message', (data, { port, address }) => {
+      const parsed = this.parseUnconnectedPong(data);
+      if (parsed) {
+        console.log(`Pong from server ${address}:${port}`);
+        this.remoteServerID = parsed.data.params.serverID;
+        this.remoteServerMagic = parsed.data.params.magic;
+        this.remoteServerName = parsed.data.params.serverName;
+        this.receivedPong = true;
       }
     });
-
-    self.socket.on('message', (data, { port, address }) => {
-      self.parser.write(data);
-    });
     
-    self.socket.bind();
-    self.sendPing();
+    this.socket.bind();
+    this.sendPing();
+  }
+
+  parseUnconnectedPong(data) {
+    try {
+      const parsed = this.parser.parsePacketBuffer(data);
+      if (parsed.data.name !== 'unconnected_pong') {
+        console.error('Connector: Ignoring unexpected packet on listen port:', parsed.data.name);
+        return null;
+      }
+      return parsed;
+    }
+    catch (error) {
+      console.error(`Connector: Ignoring unexpected/invalid packet on listen port.`);
+      console.log(error);
+    }
   }
 
   setState(newState) {
-    const self = this;
-    if (newState !== self.state) {
-      const oldState = self.state;
-      self.state = newState;
-      self.emit('changed', oldState, self.state);
+    if (newState !== this.state) {
+      const oldState = this.state;
+      this.state = newState;
+      this.emit('changed', oldState, this.state);
     }
   }
 
   sendPing() {
-    const self = this;
-    self.receivedPong = false;
-    self.serializer.write({ 
+    this.receivedPong = false;
+
+    const serialized = this.serializer.createPacketBuffer({ 
       name: 'unconnected_ping', 
       params: {
         pingID: [0, 1],
         magic: [0, 255, 255, 0, 254, 254, 254, 254, 253, 253, 253, 253, 18, 52, 86, 120],
-        unknown: self.clientID
+        unknown: this.clientID
       }
     });
-    clearTimeout(self.retryTimeout);
-    self.retryTimeout = setTimeout(() => {
-      if (self.receivedPong) {
-        self.setState('Connected');
-      } else {
-        self.setState('No Response');
-        self.remoteServerID = null;
-        self.remoteServerMagic = null;
-        self.remoteServerName = null;
+
+    this.socket.send(serialized, 0, serialized.length, this.privatePort, this.host, (err) => {
+      if (err) {
+        this.setState('Error');
+        this.emit('error', err);
       }
-      self.sendPing();
-    }, 1000);
+    });
+
+    clearTimeout(this.retryTimeout);
+    this.retryTimeout = setTimeout(() => {
+      if (this.receivedPong) {
+        this.setState('Connected');
+      } else {
+        this.setState('No Response');
+        this.remoteServerID = null;
+        this.remoteServerMagic = null;
+        this.remoteServerName = null;
+      }
+      this.sendPing();
+    }, this.pingInterval);
   }
 
   close() {
-    const self = this;
-    if (self.socket) {
-      self.socket.close();
-      clearTimeout(self.retryTimeout);
+    if (this.socket) {
+      this.socket.close();
+      clearTimeout(this.retryTimeout);
     }
   }
 }
