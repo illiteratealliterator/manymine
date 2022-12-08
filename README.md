@@ -1,3 +1,5 @@
+Update (Dec 2022): It looks like the latest version of Minecraft no longer supports this method of LAN discovery, so manymine does not appear to work at the moment. I will try and take a look when I get some free time. Sorry!
+
 # manymine
 A simple way to run multiple Minecraft Bedrock servers in docker containers on the same host, and be able to discover them as LAN games.
 
